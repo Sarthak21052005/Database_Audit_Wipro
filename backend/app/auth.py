@@ -1,31 +1,50 @@
-import hashlib
+import os
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from passlib.context import CryptContext
+from fastapi import HTTPException, status
 
-SECRET_KEY = "1234567890abcdef"
+# 🔐 Use environment variable (VERY IMPORTANT)
+SECRET_KEY = os.getenv("SECRET_KEY", "change_this_in_production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
+# 🔒 Password hashing (bcrypt only)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-def hash_password(password: str):
-    hashed = hashlib.sha256(password.encode()).hexdigest()
-    return pwd_context.hash(hashed)
 
-def verify_password(plain, hashed):
-    hashed_plain = hashlib.sha256(plain.encode()).hexdigest()
-    return pwd_context.verify(hashed_plain, hashed)
+# ✅ Hash password
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
 
-def create_access_token(data: dict):
+
+# ✅ Verify password
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+# ✅ Create JWT token
+def create_access_token(data: dict) -> str:
     to_encode = data.copy()
+
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow()  # issued at
+    })
+
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def decode_token(token: str):
+# ✅ Decode JWT token
+def decode_token(token: str) -> dict:
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+
     except JWTError:
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
