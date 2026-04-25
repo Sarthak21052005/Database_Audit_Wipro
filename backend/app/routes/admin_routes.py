@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 import app.models as models
 from app.dependencies import get_db, require_admin
+from app.schemas import AuditLogResponse
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -25,7 +26,7 @@ def rollback(
 
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
-    
+
     table = log.table_name
 
     # ✅ Prevent SQL injection
@@ -103,3 +104,74 @@ def rollback(
         db.commit()
 
         raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/logs/filter", response_model=list[AuditLogResponse])
+def filter_logs(
+    user: str = None,
+    table: str = None,
+    operation: str = None,
+    limit: int = 10,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin)
+):
+    query = db.query(models.AuditLog)
+
+    if user:
+        query = query.filter(models.AuditLog.user_name == user)
+
+    if table:
+        query = query.filter(models.AuditLog.table_name == table)
+
+    if operation:
+        query = query.filter(models.AuditLog.operation == operation)
+
+    logs = query.offset(offset).limit(limit).all()
+    return logs
+
+@router.get("/logs/{log_id}", response_model=AuditLogResponse)
+def get_log_detail(
+    log_id: int,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin)
+):
+    log = db.query(models.AuditLog).filter(models.AuditLog.id == log_id).first()
+
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+
+    return log
+
+
+@router.get("/rollback-preview/{log_id}")
+def rollback_preview(
+    log_id: int,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin)
+):
+    log = db.query(models.AuditLog).filter(models.AuditLog.id == log_id).first()
+
+    if not log:
+        raise HTTPException(status_code=404, detail="Log not found")
+
+    table = log.table_name
+
+    if log.operation == "UPDATE":
+        old_data = log.old_data
+        set_clause = ", ".join([f"{k} = '{v}'" for k, v in old_data.items()])
+        query = f"UPDATE {table} SET {set_clause} WHERE id = {old_data['id']}"
+
+    elif log.operation == "INSERT":
+        new_data = log.new_data
+        query = f"DELETE FROM {table} WHERE id = {new_data['id']}"
+
+    elif log.operation == "DELETE":
+        old_data = log.old_data
+        columns = ", ".join(old_data.keys())
+        values = ", ".join([f"'{v}'" for v in old_data.values()])
+        query = f"INSERT INTO {table} ({columns}) VALUES ({values})"
+
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported operation")
+
+    return {"rollback_query": query}

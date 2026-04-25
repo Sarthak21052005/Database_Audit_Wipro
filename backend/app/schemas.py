@@ -1,5 +1,6 @@
 from pydantic import BaseModel , Field
 from typing import Optional, Dict
+from datetime import datetime
 
 class UserCreate(BaseModel):
     username: str
@@ -27,6 +28,7 @@ class AuditLogResponse(BaseModel):
     operation: str
     old_data: Optional[Dict]
     new_data: Optional[Dict]
+    timestamp : datetime
 
     class Config:
         from_attributes = True
