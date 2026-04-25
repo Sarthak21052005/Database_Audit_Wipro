@@ -9,6 +9,9 @@ SECRET_KEY = os.getenv("SECRET_KEY", "change_this_in_production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
+if not SECRET_KEY:
+    raise ValueError("Error in backend")
+
 # 🔒 Password hashing (bcrypt only)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
